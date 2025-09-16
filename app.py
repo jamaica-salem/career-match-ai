@@ -526,7 +526,9 @@ def analyze(job_description: str, resume_text: str) -> Tuple[str,str,str,str,str
     # --- Suggestions using updated missing skills order ---
     def generate_suggestions_wrapper(pct, missing_skills_list):
         bullets = []
-        top_missing = ", ".join(missing_skills_list[:5]) if missing_skills_list else "None"
+        # Capitalize first letter of each missing skill
+        top_missing = ", ".join(s.title() for s in missing_skills_list[:5]) if missing_skills_list else "None"
+        
         if pct < 50:
             bullets.append(f"**Add key missing skills:** {top_missing}")
             bullets.append("**Highlight transferable skills:** Show relevant projects, coursework, or volunteer work.")
