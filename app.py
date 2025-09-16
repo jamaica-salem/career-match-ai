@@ -747,44 +747,18 @@ def build_ui():
             # Format chips
             missing_tech_chips = format_skill_chips(missing_tech_text, "tech")
             missing_soft_chips = format_skill_chips(missing_soft_text, "soft")
-
-            # Matched skills
-            jd_tech = extract_skills(jd, TECHNICAL_SKILLS)
-            resume_tech = extract_skills(resume, TECHNICAL_SKILLS)
-            jd_soft = extract_skills(jd, SOFT_SKILLS)
-            resume_soft = extract_skills(resume, SOFT_SKILLS)
-            matched_tech_chips = format_matched_skills(jd_tech, resume_tech)
-            matched_soft_chips = format_matched_skills(jd_soft, resume_soft)
-            
-            # Heatmap
-            heatmap_html = render_keyword_heatmap(top_keywords_from_text(jd, 8), jd)
-            score_md_with_heatmap = score_md + "<br><b>JD Keyword Density Word Cloud:</b><br>" + heatmap_html
-            
-            # Matched skills under Match Overview
-            checklist_html = f"""
-            <b>Matched Technical Skills:</b><br>{matched_tech_chips}<br>
-            <b>Matched Soft Skills:</b><br>{matched_soft_chips}
-            """
-            
-            # ------------------------------------------------
-            # Updated version (combined matched skills & updated title)
-            # ------------------------------------------------
-            
-            # Combine all matched skills (technical + soft)
+        
+            # Matched skills (combined technical + soft)
             jd_all = extract_skills(jd, TECHNICAL_SKILLS + SOFT_SKILLS)
             resume_all = extract_skills(resume, TECHNICAL_SKILLS + SOFT_SKILLS)
             matched_chips = format_matched_skills(jd_all, resume_all)
-            
-            # Heatmap with new title
+        
+            # Heatmap
             heatmap_html = render_keyword_heatmap(top_keywords_from_text(jd, 8), jd)
-            score_md_with_heatmap = score_md.replace("**Top keywords from job description:**", "**Top keywords from job description:**") \
-                                + "<b>JD Keyword Density Word Cloud:</b><br>" + heatmap_html
-            
-            # Use combined matched skills
-            checklist_html = f"{matched_chips}"
+            score_md_with_heatmap = score_md + "<br><b>JD Keyword Density Word Cloud:</b><br>" + heatmap_html
+        
+            return donut_svg, score_md_with_heatmap, missing_tech_chips, missing_soft_chips, matched_chips, suggestions
 
-            
-            return donut_svg, score_md_with_heatmap, missing_tech_chips, missing_soft_chips, checklist_html, suggestions
         run_btn.click(
             _on_click, 
             inputs=[jd_input, resume_input], 
