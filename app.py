@@ -395,20 +395,26 @@ def clean_text(text: str) -> str:
     return (text or "").strip()
 
 def preprocess_text_for_skills(text: str) -> str:
-    """
-    Convert text to lowercase and replace punctuation with spaces.
-    """
     if not text:
         return ""
+
     # Lowercase
     text_low = text.lower()
-    # Replace punctuation with spaces
+
+    # Normalize common word separators to space
+    separators = ["-", "_", "/"]
+    for sep in separators:
+        text_low = text_low.replace(sep, " ")
+
+    # Replace remaining punctuation with spaces
     translator = str.maketrans(string.punctuation, " " * len(string.punctuation))
     text_clean = text_low.translate(translator)
+
     # Collapse multiple spaces
     text_clean = " ".join(text_clean.split())
+
     return text_clean
-    
+
 def extract_skills(text: str, skills_list: List[str]) -> Set[str]:
     """
     Extract exact and synonym-mapped skills using word boundaries to reduce false positives.
