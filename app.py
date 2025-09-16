@@ -498,6 +498,7 @@ def analyze(job_description: str, resume_text: str) -> Tuple[str,str,str,str,str
     pct = int(round(cosine_score(get_embedding(jd), get_embedding(resume)) * 100))
     donut_svg = render_donut_svg(pct)
 
+    # --- Extract skills ---
     jd_tech = extract_skills(jd, TECHNICAL_SKILLS)
     resume_tech = extract_skills(resume, TECHNICAL_SKILLS)
     jd_soft = extract_skills(jd, SOFT_SKILLS)
@@ -515,7 +516,6 @@ def analyze(job_description: str, resume_text: str) -> Tuple[str,str,str,str,str
         skill_emb = get_embedding(skill)
         sim = cosine_score(jd_emb, skill_emb)
         skill_relevance.append((skill, sim))
-    # Sort descending by similarity
     skill_relevance_sorted = [s for s, sim in sorted(skill_relevance, key=lambda x: x[1], reverse=True)]
 
     missing_tech_text = "\n".join(f"- {s}" for s in skill_relevance_sorted if s in missing_tech) or "None"
@@ -523,10 +523,20 @@ def analyze(job_description: str, resume_text: str) -> Tuple[str,str,str,str,str
 
     jd_keywords = top_keywords_from_text(jd, top_n=8)
 
+    # --- Friendly Match Explanation ---
+    if pct < 50:
+        explanation_text = f"**Match Score:** {pct}%\n\nYour resume currently matches only a few of the key skills and experiences listed in this job description. Consider highlighting more relevant skills and experience to improve your match."
+    elif 50 <= pct <= 79:
+        explanation_text = f"**Match Score:** {pct}%\n\nYour resume matches many of the important skills for this job. You may want to emphasize a few additional skills or experiences to increase your chances."
+    else:  # 80-100%
+        explanation_text = f"**Match Score:** {pct}%\n\nExcellent! Your resume aligns very well with the skills and experience required for this job."
+
+    # Add JD keyword summary
+    score_md = explanation_text + f"\n\n**Key skills and topics in this job description:** {', '.join(jd_keywords)}"
+
     # --- Suggestions using updated missing skills order ---
     def generate_suggestions_wrapper(pct, missing_skills_list):
         bullets = []
-        # Capitalize first letter of each missing skill
         top_missing = ", ".join(s.title() for s in missing_skills_list[:5]) if missing_skills_list else "None"
         
         if pct < 50:
@@ -545,9 +555,6 @@ def analyze(job_description: str, resume_text: str) -> Tuple[str,str,str,str,str
         return "\n\n".join(bullets)
 
     suggestions_md = generate_suggestions_wrapper(pct, skill_relevance_sorted)
-
-    explanation = f"**Match Score:** {pct}%\n\nThis is cosine similarity of embeddings."
-    score_md = explanation + f"\n\n**Top JD keywords:** {', '.join(jd_keywords)}"
 
     return donut_svg, score_md, missing_tech_text, missing_soft_text, suggestions_md, pct
 
