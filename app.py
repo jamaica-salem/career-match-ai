@@ -503,41 +503,46 @@ def analyze(job_description: str, resume_text: str) -> Tuple[str,str,str,str,str
     jd_soft = extract_skills(jd, SOFT_SKILLS)
     resume_soft = extract_skills(resume, SOFT_SKILLS)
 
-    missing_tech_text = "\n".join(f"- {s}" for s in sorted(jd_tech - resume_tech)) or "None"
-    missing_soft_text = "\n".join(f"- {s}" for s in sorted(jd_soft - resume_soft)) or "None"
+    # --- Compute missing skills ---
+    missing_tech = jd_tech - resume_tech
+    missing_soft = jd_soft - resume_soft
+    all_missing = list(missing_tech | missing_soft)
+
+    # --- Rank missing skills by relevance ---
+    jd_emb = get_embedding(jd)
+    skill_relevance = []
+    for skill in all_missing:
+        skill_emb = get_embedding(skill)
+        sim = cosine_score(jd_emb, skill_emb)
+        skill_relevance.append((skill, sim))
+    # Sort descending by similarity
+    skill_relevance_sorted = [s for s, sim in sorted(skill_relevance, key=lambda x: x[1], reverse=True)]
+
+    missing_tech_text = "\n".join(f"- {s}" for s in skill_relevance_sorted if s in missing_tech) or "None"
+    missing_soft_text = "\n".join(f"- {s}" for s in skill_relevance_sorted if s in missing_soft) or "None"
 
     jd_keywords = top_keywords_from_text(jd, top_n=8)
 
-    from functools import partial
-    def generate_suggestions_wrapper(pct, jd_tech, resume_tech, jd_soft, resume_soft):
-        from itertools import chain
-        missing_skills = set(chain(jd_tech - resume_tech, jd_soft - resume_soft))
+    # --- Suggestions using updated missing skills order ---
+    def generate_suggestions_wrapper(pct, missing_skills_list):
         bullets = []
-    
+        top_missing = ", ".join(missing_skills_list[:5]) if missing_skills_list else "None"
         if pct < 50:
-            # 5 suggestions for low match
-            bullets.append("**Add key missing skills:** " + ", ".join(sorted(list(missing_skills)[:5])))
+            bullets.append(f"**Add key missing skills:** {top_missing}")
             bullets.append("**Highlight transferable skills:** Show relevant projects, coursework, or volunteer work.")
             bullets.append("**Tailor resume for this JD:** Focus on required skills mentioned in the job description.")
             bullets.append("**Quantify your achievements:** Include metrics, percentages, or numbers where possible.")
             bullets.append("**Improve formatting & clarity:** Use clear section headings and bullet points for readability.")
-    
         elif 50 <= pct <= 80:
-            # 3 suggestions for medium match
-            bullets.append("**Close minor gaps:** " + ", ".join(sorted(list(missing_skills)[:5])))
+            bullets.append(f"**Close minor gaps:** {top_missing}")
             bullets.append("**Optimize phrasing:** Use action verbs and quantify achievements.")
             bullets.append("**Emphasize relevant experience:** Make sure projects or roles matching the JD stand out.")
-    
         else:
-            # 2 suggestions for high match
-            bullets.append("**Fine-tune your resume:** Highlight accomplishments and optional skills: " +
-                           ", ".join(sorted(list(missing_skills)[:5])))
+            bullets.append(f"**Fine-tune your resume:** Highlight accomplishments and optional skills: {top_missing}")
             bullets.append("**Showcase leadership & impact:** Emphasize contributions and results in each role.")
-    
         return "\n\n".join(bullets)
 
-
-    suggestions_md = generate_suggestions_wrapper()
+    suggestions_md = generate_suggestions_wrapper(pct, skill_relevance_sorted)
 
     explanation = f"**Match Score:** {pct}%\n\nThis is cosine similarity of embeddings."
     score_md = explanation + f"\n\n**Top JD keywords:** {', '.join(jd_keywords)}"
