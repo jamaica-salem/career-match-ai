@@ -470,6 +470,8 @@ def render_keyword_heatmap(jd_keywords: List[str], jd_text: str) -> str:
 
 
 def generate_suggestions_dynamic(
+    resume: str,
+    job_description: str,
     matched_skills: Set[str], 
     missing_skills: Set[str], 
     jd_keywords: List[str], 
@@ -477,6 +479,7 @@ def generate_suggestions_dynamic(
 ) -> str:
     """
     Generate dynamic suggested improvements using FLAN-T5-small.
+    Includes full resume and job description for better context.
     """
     match_level = ""
     if pct < 50:
@@ -487,19 +490,26 @@ def generate_suggestions_dynamic(
         match_level = "high"
 
     prompt = f"""
-You are a resume improvement assistant. The user has a {match_level} match ({pct}%) with the job description.
-
-Matched skills: {', '.join(sorted(matched_skills)) or 'None'}
-Missing skills: {', '.join(sorted(missing_skills)) or 'None'}
-Top keywords from job description: {', '.join(jd_keywords) or 'None'}
-
-Generate a concise list of 4-6 suggested improvements tailored to this user's resume.
-Use bullet points, focus on actionable tips.
-"""
-    inputs = flan_tokenizer(prompt, return_tensors="pt", truncation=True)
+        You are a resume improvement assistant. The user has a {match_level} match ({pct}%) with the job description.
+        
+        Job Description:
+        {job_description}
+        
+        Resume:
+        {resume}
+        
+        Matched skills: {', '.join(sorted(matched_skills)) or 'None'}
+        Missing skills: {', '.join(sorted(missing_skills)) or 'None'}
+        Top keywords from job description: {', '.join(jd_keywords) or 'None'}
+        
+        Generate a concise list of 4-6 actionable suggested improvements tailored to this resume for the job description.
+        Use bullet points, focus on actionable tips, phrasing, and structure.
+        """
+    inputs = flan_tokenizer(prompt, return_tensors="pt", truncation=True, max_length=1024)
     outputs = flan_model.generate(**inputs, max_length=250)
     suggestions = flan_tokenizer.decode(outputs[0], skip_special_tokens=True)
     return suggestions
+
     
 def generate_suggestions(missing_skills: Set[str], jd_top_keywords: List[str], resume: str) -> str:
     bullets = []
@@ -548,11 +558,14 @@ def analyze(job_description: str, resume_text: str) -> Tuple[str, str, str, str,
 
     jd_keywords = top_keywords_from_text(jd, top_n=8)
     suggestions_md = generate_suggestions_dynamic(
+        resume=resume,
+        job_description=jd,
         matched_skills=resume_tech | resume_soft,
         missing_skills=missing_tech | missing_soft,
         jd_keywords=jd_keywords,
         pct=pct
     )
+
 
     explanation = (
         f"**Match Score:** {format_score_pct(sim)}\n\n"
