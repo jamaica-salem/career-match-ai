@@ -675,7 +675,7 @@ def build_ui():
         
             # Heatmap
             heatmap_html = render_keyword_heatmap(top_keywords_from_text(jd, 8), jd)
-            score_md_with_heatmap = score_md + "<br><b>JD Keyword Density Word Cloud:</b><br>" + heatmap_html
+            score_md_with_heatmap = score_md + "<br><br><b>JD Keyword Density Word Cloud:</b><br>" + heatmap_html
         
             return donut_svg, score_md_with_heatmap, missing_tech_chips, missing_soft_chips, matched_chips_html, suggestions
 
