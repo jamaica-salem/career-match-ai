@@ -1,22 +1,5 @@
 #app.py
 
-"""
-Resume–Job Match Scorer — improved UI + animations + extensive IT skills
-Single-file Gradio app (app.py) for Hugging Face Spaces with enhanced UI/UX, animated donut chart,
-and an extensive IT skills vocabulary suitable for most IT job families.
-
-Files you should include in the HF Space repo:
-- app.py                 (this file)
-- requirements.txt       (listed below)
-- README.md              (deployment + usage notes)
-
-Requirements (requirements.txt):
-gradio>=3.0
-sentence-transformers>=2.2.2
-scikit-learn>=1.0
-numpy>=1.21
-"""
-
 import re
 import time
 from typing import List, Set, Tuple
