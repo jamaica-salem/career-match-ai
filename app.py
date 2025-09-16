@@ -465,7 +465,7 @@ def format_matched_skills(jd_skills: Set[str], resume_skills: Set[str]) -> str:
 
 def render_keyword_heatmap(jd_keywords: List[str], jd_text: str) -> str:
     if not jd_keywords:
-        return "<i>No keywords detected for heatmap.</i>"
+        return "<i>No keywords detected for wordmap.</i>"
 
     # Count frequencies
     tokens = re.findall(r"[a-zA-Z0-9+#+\.\-]+", jd_text.lower())
@@ -708,7 +708,7 @@ def build_ui():
             # Format chips
             missing_tech_chips = format_skill_chips(missing_tech_text, "tech")
             missing_soft_chips = format_skill_chips(missing_soft_text, "soft")
-            
+
             # Matched skills
             jd_tech = extract_skills(jd, TECHNICAL_SKILLS)
             resume_tech = extract_skills(resume, TECHNICAL_SKILLS)
@@ -726,6 +726,24 @@ def build_ui():
             <b>Matched Technical Skills:</b><br>{matched_tech_chips}<br>
             <b>Matched Soft Skills:</b><br>{matched_soft_chips}
             """
+            
+            # ------------------------------------------------
+            # Updated version (combined matched skills & updated title)
+            # ------------------------------------------------
+            
+            # Combine all matched skills (technical + soft)
+            jd_all = extract_skills(jd, TECHNICAL_SKILLS + SOFT_SKILLS)
+            resume_all = extract_skills(resume, TECHNICAL_SKILLS + SOFT_SKILLS)
+            matched_chips = format_matched_skills(jd_all, resume_all)
+            
+            # Heatmap with new title
+            heatmap_html = render_keyword_heatmap(top_keywords_from_text(jd, 8), jd)
+            score_md_with_heatmap = score_md.replace("**Top keywords from job description:**", "**Top keywords from job description (wordmap):**") \
+                                + "<br><b>JD Keyword Density Heatmap:</b><br>" + heatmap_html
+            
+            # Use combined matched skills
+            checklist_html = f"{matched_chips}"
+
             
             return donut_svg, score_md_with_heatmap, missing_tech_chips, missing_soft_chips, checklist_html, suggestions
         run_btn.click(
