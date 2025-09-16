@@ -742,22 +742,45 @@ def build_ui():
                         gr.Markdown("#### Suggested Improvements")
                         out_suggestions = gr.Markdown("Suggested improvements will appear here.")
         def _on_click(jd, resume):
-            donut_svg, score_md, missing_tech_text, missing_soft_text, suggestions, pct = analyze(jd, resume)
+            # Analyze resume vs JD
+            donut_svg, score_md, missing_tech_text, missing_soft_text, _, pct = analyze(jd, resume)
             
-            # Format chips
+            # Format missing skills chips
             missing_tech_chips = format_skill_chips(missing_tech_text, "tech")
             missing_soft_chips = format_skill_chips(missing_soft_text, "soft")
-        
-            # Matched skills (combined technical + soft)
-            jd_all = extract_skills(jd, TECHNICAL_SKILLS + SOFT_SKILLS)
-            resume_all = extract_skills(resume, TECHNICAL_SKILLS + SOFT_SKILLS)
-            matched_chips = format_matched_skills(jd_all, resume_all)
-        
+            
+            # Extract matched skills separately
+            jd_tech = extract_skills(jd, TECHNICAL_SKILLS)
+            resume_tech = extract_skills(resume, TECHNICAL_SKILLS)
+            matched_tech_chips = format_matched_skills(jd_tech, resume_tech)
+            
+            jd_soft = extract_skills(jd, SOFT_SKILLS)
+            resume_soft = extract_skills(resume, SOFT_SKILLS)
+            matched_soft_chips = format_matched_skills(jd_soft, resume_soft)
+            
+            # Matched skills under Match Overview (separated)
+            matched_html = f"""
+            <b>Matched Technical Skills:</b><br>{matched_tech_chips}<br>
+            <b>Matched Soft Skills:</b><br>{matched_soft_chips}
+            """
+            
+            # Generate dynamic suggestions (FLAN-T5)
+            jd_keywords = top_keywords_from_text(jd, 8)
+            suggestions_md = generate_suggestions_dynamic(
+                resume=resume,
+                job_description=jd,
+                matched_skills=resume_tech | resume_soft,
+                missing_skills=(jd_tech | jd_soft) - (resume_tech | resume_soft),
+                jd_keywords=jd_keywords,
+                pct=pct
+            )
+            
             # Heatmap
-            heatmap_html = render_keyword_heatmap(top_keywords_from_text(jd, 8), jd)
+            heatmap_html = render_keyword_heatmap(jd_keywords, jd)
             score_md_with_heatmap = score_md + "<br><b>JD Keyword Density Word Cloud:</b><br>" + heatmap_html
-        
-            return donut_svg, score_md_with_heatmap, missing_tech_chips, missing_soft_chips, matched_chips, suggestions
+            
+            return donut_svg, score_md_with_heatmap, missing_tech_chips, missing_soft_chips, matched_html, suggestions_md
+
 
         run_btn.click(
             _on_click, 
