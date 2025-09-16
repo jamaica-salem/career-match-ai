@@ -667,8 +667,8 @@ def build_ui():
         
             # Combine matched tech + soft skills
             matched_chips_html = f"""
-            <b>Matched Technical Skills:</b><br>{matched_tech_chips}<br>
-            <b>Matched Soft Skills:</b><br>{matched_soft_chips}
+            <b>Technical Skills:</b><br>{matched_tech_chips}<br>
+            <br><b>Soft Skills:</b><br>{matched_soft_chips}<br>
             """
         
             # Heatmap
