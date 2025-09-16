@@ -2,11 +2,12 @@
 
 import re
 import time
+import string
 from typing import List, Set, Tuple
+
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from sklearn.metrics.pairwise import cosine_similarity
 import gradio as gr
 
@@ -379,11 +380,6 @@ SKILL_SYNONYMS = {
 MODEL_NAME = "all-MiniLM-L6-v2"
 model = SentenceTransformer(MODEL_NAME)
 
-# Load FLAN-T5 small (CPU-friendly)
-FLAN_MODEL_NAME = "google/flan-t5-small"
-flan_tokenizer = AutoTokenizer.from_pretrained(FLAN_MODEL_NAME)
-flan_model = AutoModelForSeq2SeqLM.from_pretrained(FLAN_MODEL_NAME)
-
 # ---------------------------
 # Helper functions
 # ---------------------------
@@ -391,20 +387,35 @@ flan_model = AutoModelForSeq2SeqLM.from_pretrained(FLAN_MODEL_NAME)
 def clean_text(text: str) -> str:
     return (text or "").strip()
 
-def extract_skills(text: str, skills_list: List[str]) -> Set[str]:
+def preprocess_text_for_skills(text: str) -> str:
+    """
+    Convert text to lowercase and replace punctuation with spaces.
+    """
     if not text:
-        return set()
+        return ""
+    # Lowercase
     text_low = text.lower()
+    # Replace punctuation with spaces
+    translator = str.maketrans(string.punctuation, " " * len(string.punctuation))
+    text_clean = text_low.translate(translator)
+    # Collapse multiple spaces
+    text_clean = " ".join(text_clean.split())
+    return text_clean
+    
+def extract_skills(text: str, skills_list: List[str]) -> Set[str]:
+    text_low = preprocess_text_for_skills(text)
     found_skills = set()
 
     # Exact skill matches
     for skill in skills_list:
-        if re.search(rf"\b{re.escape(skill.lower())}\b", text_low):
+        skill_norm = skill.lower()
+        if skill_norm in text_low:
             found_skills.add(skill)
 
     # Synonym matches
     for syn, real_skill in SKILL_SYNONYMS.items():
-        if re.search(rf"\b{re.escape(syn.lower())}\b", text_low) and real_skill in skills_list:
+        syn_norm = syn.lower()
+        if syn_norm in text_low and real_skill in skills_list:
             found_skills.add(real_skill)
 
     return found_skills
@@ -451,6 +462,7 @@ def format_matched_skills(jd_skills: Set[str], resume_skills: Set[str]) -> str:
         chips_html += f'<span style="display:inline-block;margin:4px;padding:6px 10px;border-radius:12px;background:{color};font-weight:600;font-size:13px;animation:chip-fade 1s ease;">{skill.title()}</span>'
     return chips_html
 
+
 def render_keyword_heatmap(jd_keywords: List[str], jd_text: str) -> str:
     if not jd_keywords:
         return "<i>No keywords detected for wordmap.</i>"
@@ -468,52 +480,44 @@ def render_keyword_heatmap(jd_keywords: List[str], jd_text: str) -> str:
         heatmap_html += f'<span style="font-size:{weight}px; opacity:{opacity}; margin:4px; display:inline-block;">{kw}</span>'
     return heatmap_html
 
+def generate_suggestions(missing_skills: Set[str], jd_top_keywords: List[str], resume: str, pct: int) -> str:
+    """
+    Generate 5 dynamic improvement suggestions based on missing skills and match percentage.
+    """
+    bullets = []
 
-def generate_suggestions_dynamic(
-    matched_skills: Set[str], 
-    missing_skills: Set[str], 
-    jd_keywords: List[str], 
-    pct: int
-) -> str:
-    """
-    Generate dynamic suggested improvements using FLAN-T5-small,
-    based on skills and match percentage.
-    """
-    match_level = ""
+    # Low match (<50%) → focus on missing key skills and entry-level guidance
     if pct < 50:
-        match_level = "low"
-    elif pct <= 80:
-        match_level = "medium"
+        bullets.append("**Add key missing skills:** Include these essential skills from the job description:\n" +
+                       "\n".join(f"- {s.title()}" for s in sorted(list(missing_skills)[:5])))
+        bullets.append("**Highlight transferable skills:** Show relevant projects, coursework, or volunteer work.")
+        bullets.append("**Entry-level guidance:** Consider certifications or online courses for core missing skills.")
+        bullets.append("**Use simple, clear phrasing:** Short sentences, bullet points, and consistent tense help readability.")
+        bullets.append("**Next steps:** Tailor your resume for this role and aim to increase the match percentage before applying.")
+
+    # Medium match (50–80%) → optimize phrasing, highlight experience, minor gaps
+    elif 50 <= pct <= 80:
+        bullets.append("**Close minor gaps:** Add these missing skills if relevant:\n" +
+                       "\n".join(f"- {s.title()}" for s in sorted(list(missing_skills)[:5])))
+        bullets.append("**Optimize phrasing:** Use action verbs and quantify achievements where possible.")
+        bullets.append("**Highlight experience:** Move relevant experience to the top and ensure keywords are present.")
+        bullets.append("**Refine formatting:** Ensure consistent fonts, bullet points, and clear sections.")
+        bullets.append("**Next steps:** Re-run the analysis after updates to reach a high match score (>80%).")
+
+    # High match (>80%) → fine-tuning, emphasizing achievements, advanced tips
     else:
-        match_level = "high"
+        bullets.append("**Fine-tune your resume:** Ensure formatting is clean and bullet points are concise.")
+        bullets.append("**Emphasize accomplishments:** Highlight measurable impact and leadership experiences.")
+        bullets.append("**Include optional skills:** Add these missing skills to further strengthen your profile:\n" +
+                       "\n".join(f"- {s.title()}" for s in sorted(list(missing_skills)[:5])))
+        bullets.append("**Refine keywords:** Ensure top job description keywords are integrated naturally.")
+        bullets.append("**Advanced tips:** Tailor each section for maximum relevance to this role and ATS-friendly wording.")
 
-    prompt = f"""
-You are a resume improvement assistant. The candidate has a {match_level} match ({pct}%) with the job requirements.
+    # Always include JD keyword suggestion if space allows
+    if jd_top_keywords and len(bullets) < 5:
+        bullets.append(f"**Match keywords from the job description:** Include relevant terms like {', '.join(jd_top_keywords[:5])}.")
 
-Matched skills: {', '.join(sorted(matched_skills)) or 'None'}
-Missing skills: {', '.join(sorted(missing_skills)) or 'None'}
-Important job keywords: {', '.join(jd_keywords) or 'None'}
-
-Generate 4-6 concise, actionable, and **dynamic** suggestions for improving the resume.
-Focus on skill coverage, relevance, formatting, and project examples.
-Provide each suggestion as a separate bullet point.
-Consider the candidate's specific missing skills and matched skills carefully. Avoid generic advice.
-"""
-
-    inputs = flan_tokenizer(prompt, return_tensors="pt", truncation=True, max_length=1024)
-    
-    outputs = flan_model.generate(
-        **inputs,
-        max_length=250,
-        num_beams=4,        # better text quality
-        early_stopping=True,
-        no_repeat_ngram_size=2,
-        temperature=0.7
-    )
-    
-    suggestions = flan_tokenizer.decode(outputs[0], skip_special_tokens=True)
-    return suggestions.strip()
-
+    return "\n\n".join(bullets)
 
 
 # ---------------------------
@@ -542,13 +546,7 @@ def analyze(job_description: str, resume_text: str) -> Tuple[str, str, str, str,
     missing_soft_text = "\n".join(f"- {s}" for s in sorted(missing_soft)) if missing_soft else "None"
 
     jd_keywords = top_keywords_from_text(jd, top_n=8)
-    suggestions_md = generate_suggestions_dynamic(
-                matched_skills=resume_tech | resume_soft,
-                missing_skills=(jd_tech | jd_soft) - (resume_tech | resume_soft),
-                jd_keywords=jd_keywords,
-                pct=pct
-            )
-
+    suggestions_md = generate_suggestions(missing_tech | missing_soft, jd_keywords, resume, pct)
 
     explanation = (
         f"**Match Score:** {format_score_pct(sim)}\n\n"
@@ -725,44 +723,33 @@ def build_ui():
                         gr.Markdown("#### Suggested Improvements")
                         out_suggestions = gr.Markdown("Suggested improvements will appear here.")
         def _on_click(jd, resume):
-            # Analyze resume vs JD
-            donut_svg, score_md, missing_tech_text, missing_soft_text, _, pct = analyze(jd, resume)
+            donut_svg, score_md, missing_tech_text, missing_soft_text, suggestions, pct = analyze(jd, resume)
             
-            # Format missing skills chips
+            # Format missing skill chips
             missing_tech_chips = format_skill_chips(missing_tech_text, "tech")
             missing_soft_chips = format_skill_chips(missing_soft_text, "soft")
-            
-            # Extract matched skills separately
+        
+            # Extract skills separately
             jd_tech = extract_skills(jd, TECHNICAL_SKILLS)
             resume_tech = extract_skills(resume, TECHNICAL_SKILLS)
-            matched_tech_chips = format_matched_skills(jd_tech, resume_tech)
-            
             jd_soft = extract_skills(jd, SOFT_SKILLS)
             resume_soft = extract_skills(resume, SOFT_SKILLS)
+        
+            # Compute matched skills (only intersection)
+            matched_tech_chips = format_matched_skills(jd_tech, resume_tech)
             matched_soft_chips = format_matched_skills(jd_soft, resume_soft)
-            
-            # Matched skills under Match Overview (separated)
-            matched_html = f"""
+        
+            # Combine matched tech + soft skills
+            matched_chips_html = f"""
             <b>Matched Technical Skills:</b><br>{matched_tech_chips}<br>
             <b>Matched Soft Skills:</b><br>{matched_soft_chips}
             """
-            
-            # Generate dynamic suggestions (FLAN-T5)
-            jd_keywords = top_keywords_from_text(jd, 8)
-            suggestions_md = generate_suggestions_dynamic(
-                matched_skills=resume_tech | resume_soft,
-                missing_skills=(jd_tech | jd_soft) - (resume_tech | resume_soft),
-                jd_keywords=jd_keywords,
-                pct=pct
-            )
-
-            
+        
             # Heatmap
-            heatmap_html = render_keyword_heatmap(jd_keywords, jd)
+            heatmap_html = render_keyword_heatmap(top_keywords_from_text(jd, 8), jd)
             score_md_with_heatmap = score_md + "<br><b>JD Keyword Density Word Cloud:</b><br>" + heatmap_html
-            
-            return donut_svg, score_md_with_heatmap, missing_tech_chips, missing_soft_chips, matched_html, suggestions_md
-
+        
+            return donut_svg, score_md_with_heatmap, missing_tech_chips, missing_soft_chips, matched_chips_html, suggestions
 
         run_btn.click(
             _on_click, 
