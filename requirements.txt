@@ -1,0 +1,12 @@
+# Core UI + NLP
+gradio>=3.0
+sentence-transformers>=2.2.2
+scikit-learn>=1.0
+numpy>=1.21
+
+# Runtime for sentence-transformers (CPU wheels will be chosen automatically on most systems)
+torch>=2.0.0
+
+# Optional / helpful (uncomment if you plan to add indexing or visualizations)
+# faiss-cpu>=1.7.3       # for fast similarity search (only if you need batch/indexing)
+# matplotlib>=3.6        # only if you want image-based charts instead of SVG
