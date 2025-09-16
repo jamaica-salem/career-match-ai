@@ -738,7 +738,7 @@ def build_ui():
             
             # Heatmap with new title
             heatmap_html = render_keyword_heatmap(top_keywords_from_text(jd, 8), jd)
-            score_md_with_heatmap = score_md.replace("**Top keywords from job description:**", "**Top keywords from job description (wordmap):**") \
+            score_md_with_heatmap = score_md.replace("**Top keywords from job description:**", "**Top keywords from job description:**") \
                                 + "<b>JD Keyword Density Word Cloud:</b><br>" + heatmap_html
             
             # Use combined matched skills
