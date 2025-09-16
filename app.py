@@ -713,7 +713,7 @@ def build_ui():
                     with gr.Column(elem_classes="card"):
                         gr.Markdown("#### Suggested Improvements")
                         out_suggestions = gr.Markdown("Suggested improvements will appear here.")
-        def _on_click():
+        def _on_click(jd, resume):
             # Analyze resume vs JD
             donut_svg, score_md, missing_tech_text, missing_soft_text, _, pct = analyze(jd, resume)
             
