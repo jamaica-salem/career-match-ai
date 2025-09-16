@@ -689,7 +689,7 @@ def build_ui():
                     with gr.Column(elem_classes="card"):
                         gr.Markdown("#### Match Overview")
                         out_chart = gr.HTML(render_donut_svg(0))
-                        out_score = gr.Markdown("**Match score & explanation will appear here**")
+                        out_score = gr.Markdown("**Match score and explanation will appear here.**")
                     with gr.Column(elem_classes="card"):
                         gr.Markdown("#### Matched Skills")
                         out_matched_skills = gr.HTML("Matched skills will appear here.")
