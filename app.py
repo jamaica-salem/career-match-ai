@@ -477,7 +477,7 @@ def generate_suggestions_dynamic(
 ) -> str:
     """
     Generate dynamic suggested improvements using FLAN-T5-small,
-    based only on skills and match percentage.
+    based on skills and match percentage.
     """
     match_level = ""
     if pct < 50:
@@ -488,19 +488,32 @@ def generate_suggestions_dynamic(
         match_level = "high"
 
     prompt = f"""
-    You are a resume improvement assistant. The candidate has a {match_level} match ({pct}%) with the job requirements.
+You are a resume improvement assistant. The candidate has a {match_level} match ({pct}%) with the job requirements.
 
-    Matched skills: {', '.join(sorted(matched_skills)) or 'None'}
-    Missing skills: {', '.join(sorted(missing_skills)) or 'None'}
-    Important job keywords: {', '.join(jd_keywords) or 'None'}
+Matched skills: {', '.join(sorted(matched_skills)) or 'None'}
+Missing skills: {', '.join(sorted(missing_skills)) or 'None'}
+Important job keywords: {', '.join(jd_keywords) or 'None'}
 
-    Generate 4-6 concise, actionable suggestions for improving the resume.
-    Focus on skill coverage, relevance, formatting, and project examples.
-    """
-    inputs = flan_tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512)
-    outputs = flan_model.generate(**inputs, max_length=250)
+Generate 4-6 concise, actionable, and **dynamic** suggestions for improving the resume.
+Focus on skill coverage, relevance, formatting, and project examples.
+Provide each suggestion as a separate bullet point.
+Consider the candidate's specific missing skills and matched skills carefully. Avoid generic advice.
+"""
+
+    inputs = flan_tokenizer(prompt, return_tensors="pt", truncation=True, max_length=1024)
+    
+    outputs = flan_model.generate(
+        **inputs,
+        max_length=250,
+        num_beams=4,        # better text quality
+        early_stopping=True,
+        no_repeat_ngram_size=2,
+        temperature=0.7
+    )
+    
     suggestions = flan_tokenizer.decode(outputs[0], skip_special_tokens=True)
-    return suggestions
+    return suggestions.strip()
+
 
 
 # ---------------------------
