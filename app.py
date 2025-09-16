@@ -426,12 +426,6 @@ def extract_skills(text: str, skills_list: List[str]) -> Set[str]:
 
     return found_skills
 
-
-def get_embedding(text: str) -> np.ndarray:
-    if not text:
-        return np.zeros((model.get_sentence_embedding_dimension(),), dtype=float)
-    return model.encode([text], convert_to_numpy=True)[0]
-
 def cosine_score(a: np.ndarray, b: np.ndarray) -> float:
     if a is None or b is None:
         return 0.0
@@ -468,7 +462,6 @@ def format_matched_skills(jd_skills: Set[str], resume_skills: Set[str]) -> str:
         color = colors[i % len(colors)]
         chips_html += f'<span style="display:inline-block;margin:4px;padding:6px 10px;border-radius:12px;background:{color};font-weight:600;font-size:13px;animation:chip-fade 1s ease;">{skill.title()}</span>'
     return chips_html
-
 
 def render_keyword_heatmap(jd_keywords: List[str], jd_text: str) -> str:
     if not jd_keywords:
@@ -736,27 +729,22 @@ def build_ui():
             missing_tech_chips = format_skill_chips(missing_tech_text, "tech")
             missing_soft_chips = format_skill_chips(missing_soft_text, "soft")
         
-            # Extract skills separately
-            jd_tech = extract_skills(jd, TECHNICAL_SKILLS)
-            resume_tech = extract_skills(resume, TECHNICAL_SKILLS)
-            jd_soft = extract_skills(jd, SOFT_SKILLS)
-            resume_soft = extract_skills(resume, SOFT_SKILLS)
-        
-            # Compute matched skills (only intersection)
-            matched_tech_chips = format_matched_skills(jd_tech, resume_tech)
-            matched_soft_chips = format_matched_skills(jd_soft, resume_soft)
-        
-            # Combine matched tech + soft skills
-            matched_chips_html = f"""
-            <b>Matched Technical Skills:</b><br>{matched_tech_chips}<br>
-            <b>Matched Soft Skills:</b><br>{matched_soft_chips}
-            """
-        
+            # Combine all skills for matched computation
+            all_skills = TECHNICAL_SKILLS + SOFT_SKILLS
+            
+            # Extract skills from JD and resume
+            jd_skills = extract_skills(jd, all_skills)
+            resume_skills = extract_skills(resume, all_skills)
+            
+            # Compute matched skills (intersection)
+            matched_chips_html = format_matched_skills(jd_skills, resume_skills)
+            
             # Heatmap
             heatmap_html = render_keyword_heatmap(top_keywords_from_text(jd, 8), jd)
             score_md_with_heatmap = score_md + "<br><b>JD Keyword Density Word Cloud:</b><br>" + heatmap_html
         
             return donut_svg, score_md_with_heatmap, missing_tech_chips, missing_soft_chips, matched_chips_html, suggestions
+
 
         run_btn.click(
             _on_click, 
