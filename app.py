@@ -470,16 +470,14 @@ def render_keyword_heatmap(jd_keywords: List[str], jd_text: str) -> str:
 
 
 def generate_suggestions_dynamic(
-    resume: str,
-    job_description: str,
     matched_skills: Set[str], 
     missing_skills: Set[str], 
     jd_keywords: List[str], 
     pct: int
 ) -> str:
     """
-    Generate dynamic suggested improvements using FLAN-T5-small.
-    Includes full resume and job description for better context.
+    Generate dynamic suggested improvements using FLAN-T5-small,
+    based only on skills and match percentage.
     """
     match_level = ""
     if pct < 50:
@@ -490,46 +488,20 @@ def generate_suggestions_dynamic(
         match_level = "high"
 
     prompt = f"""
-        You are a resume improvement assistant. The user has a {match_level} match ({pct}%) with the job description.
-        
-        Job Description:
-        {job_description}
-        
-        Resume:
-        {resume}
-        
-        Matched skills: {', '.join(sorted(matched_skills)) or 'None'}
-        Missing skills: {', '.join(sorted(missing_skills)) or 'None'}
-        Top keywords from job description: {', '.join(jd_keywords) or 'None'}
-        
-        Generate a concise list of 4-6 actionable suggested improvements tailored to this resume for the job description.
-        Use bullet points, focus on actionable tips, phrasing, and structure.
-        """
-    inputs = flan_tokenizer(prompt, return_tensors="pt", truncation=True, max_length=1024)
+    You are a resume improvement assistant. The candidate has a {match_level} match ({pct}%) with the job requirements.
+
+    Matched skills: {', '.join(sorted(matched_skills)) or 'None'}
+    Missing skills: {', '.join(sorted(missing_skills)) or 'None'}
+    Important job keywords: {', '.join(jd_keywords) or 'None'}
+
+    Generate 4-6 concise, actionable suggestions for improving the resume.
+    Focus on skill coverage, relevance, formatting, and project examples.
+    """
+    inputs = flan_tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512)
     outputs = flan_model.generate(**inputs, max_length=250)
     suggestions = flan_tokenizer.decode(outputs[0], skip_special_tokens=True)
     return suggestions
 
-    
-def generate_suggestions(missing_skills: Set[str], jd_top_keywords: List[str], resume: str) -> str:
-    bullets = []
-    if missing_skills:
-        bullets.append(
-            "**Add missing skills to your resume:** Include these exact keywords — they were asked in the job description and are not present in your resume.\n\n"
-            + "\n".join(f"- {s.title()}" for s in sorted(missing_skills))  # <-- apply .title() here
-        )
-    bullets.extend([
-        "**Emphasize relevance:** Move the most relevant skills and achievements to the top.",
-        "**Quantify achievements:** Add counts, percentages, or dollar amounts where possible."
-    ])
-    if jd_top_keywords:
-        bullets.append(f"**Match keywords from the job description:** The job emphasizes these: {', '.join(jd_top_keywords[:6])}.")
-    bullets.extend([
-        "**Polish & format:** Use bullet points, short sentences, consistent tense.",
-        "**Add projects/examples:** If you lack direct experience, show coursework or side projects.",
-        "**Next steps:** Tailor your resume, then re-run the scan. Aim for 80%+ match."
-    ])
-    return "\n\n".join(bullets)
 
 # ---------------------------
 # Main analysis
@@ -741,7 +713,7 @@ def build_ui():
                     with gr.Column(elem_classes="card"):
                         gr.Markdown("#### Suggested Improvements")
                         out_suggestions = gr.Markdown("Suggested improvements will appear here.")
-        def _on_click(jd, resume):
+        def _on_click():
             # Analyze resume vs JD
             donut_svg, score_md, missing_tech_text, missing_soft_text, _, pct = analyze(jd, resume)
             
@@ -767,13 +739,12 @@ def build_ui():
             # Generate dynamic suggestions (FLAN-T5)
             jd_keywords = top_keywords_from_text(jd, 8)
             suggestions_md = generate_suggestions_dynamic(
-                resume=resume,
-                job_description=jd,
                 matched_skills=resume_tech | resume_soft,
                 missing_skills=(jd_tech | jd_soft) - (resume_tech | resume_soft),
                 jd_keywords=jd_keywords,
                 pct=pct
             )
+
             
             # Heatmap
             heatmap_html = render_keyword_heatmap(jd_keywords, jd)
