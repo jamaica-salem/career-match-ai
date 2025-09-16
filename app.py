@@ -375,71 +375,45 @@ SKILL_SYNONYMS = {
     "problem own": "problem ownership"
 }
 
-# ---------------------------
-# Load small sentence-transformers model once
-# ---------------------------
 MODEL_NAME = "all-MiniLM-L6-v2"
-model = SentenceTransformer(MODEL_NAME)
+try:
+    model = SentenceTransformer(MODEL_NAME)
+except Exception as e:
+    print(f"[ERROR] Failed to load model {MODEL_NAME}: {e}")
+    raise e
 
 # ---------------------------
-# Helper functions
+# Helper Functions
 # ---------------------------
-
 @lru_cache(maxsize=128)
 def get_embedding(text: str) -> np.ndarray:
     if not text:
         return np.zeros((model.get_sentence_embedding_dimension(),), dtype=float)
     return model.encode([text], convert_to_numpy=True)[0]
-    
+
 def clean_text(text: str) -> str:
     return (text or "").strip()
 
 def preprocess_text_for_skills(text: str) -> str:
-    if not text:
-        return ""
-
-    # Lowercase
-    text_low = text.lower()
-
-    # Normalize common word separators to space
-    separators = ["-", "_", "/"]
-    for sep in separators:
+    text_low = (text or "").lower()
+    for sep in ["-", "_", "/"]:
         text_low = text_low.replace(sep, " ")
-
-    # Replace remaining punctuation with spaces
-    translator = str.maketrans(string.punctuation, " " * len(string.punctuation))
-    text_clean = text_low.translate(translator)
-
-    # Collapse multiple spaces
-    text_clean = " ".join(text_clean.split())
-
-    return text_clean
+    text_low = text_low.translate(str.maketrans(string.punctuation, " " * len(string.punctuation)))
+    return " ".join(text_low.split())
 
 def extract_skills(text: str, skills_list: List[str]) -> Set[str]:
-    """
-    Extract exact and synonym-mapped skills using word boundaries to reduce false positives.
-    """
     text_clean = preprocess_text_for_skills(text)
-    found_skills = set()
-
-    # Merge skill synonyms into a lookup
-    skill_map = {**{s.lower(): s for s in skills_list}, **{syn.lower(): real for syn, real in SKILL_SYNONYMS.items() if real in skills_list}}
-
-    for key, actual_skill in skill_map.items():
-        pattern = r"\b" + re.escape(key) + r"\b"
-        if re.search(pattern, text_clean):
-            found_skills.add(actual_skill)
-
-    return found_skills
+    tokens = set(text_clean.split())
+    skill_map = {**{s.lower(): s for s in skills_list},
+                 **{syn.lower(): real for syn, real in SKILL_SYNONYMS.items() if real in skills_list}}
+    return {skill_map[t] for t in tokens if t in skill_map}
 
 def cosine_score(a: np.ndarray, b: np.ndarray) -> float:
-    if a is None or b is None:
-        return 0.0
     try:
         sim = cosine_similarity(a.reshape(1, -1), b.reshape(1, -1))[0][0]
+        return float(np.clip(sim, 0.0, 1.0))
     except Exception:
-        sim = 0.0
-    return float(np.clip(sim, 0.0, 1.0))
+        return 0.0
 
 def format_score_pct(sim: float) -> str:
     return f"{int(round(sim * 100))}%"
@@ -454,20 +428,50 @@ def top_keywords_from_text(source: str, top_n: int = 8) -> List[str]:
         if len(t) <= 2 or t in stopwords:
             continue
         freq[t] = freq.get(t, 0) + 1
-    keywords = sorted(freq, key=lambda k: (-freq[k], k))
-    return keywords[:top_n]
+    return sorted(freq, key=lambda k: (-freq[k], k))[:top_n]
 
 def format_matched_skills(jd_skills: Set[str], resume_skills: Set[str]) -> str:
     matched = jd_skills & resume_skills
     if not matched:
         return "<span class='small-note'>No matched skills detected.</span>"
-    skill_items = sorted(matched)
-    colors = ["#22c55e", "#16a34a", "#4ade80", "#86efac"]  # green tones
-    chips_html = ""
-    for i, skill in enumerate(skill_items):
-        color = colors[i % len(colors)]
-        chips_html += f'<span style="display:inline-block;margin:4px;padding:6px 10px;border-radius:12px;background:{color};font-weight:600;font-size:13px;animation:chip-fade 1s ease;">{skill.title()}</span>'
-    return chips_html
+    colors = ["#22c55e", "#16a34a", "#4ade80", "#86efac"]
+    return "".join(
+        f'<span style="display:inline-block;margin:4px;padding:6px 10px;border-radius:12px;background:{colors[i%len(colors)]};font-weight:600;font-size:13px;">{s.title()}</span>'
+        for i, s in enumerate(sorted(matched))
+    )
+
+# ---------------------------
+# Donut Chart
+# ---------------------------
+def render_donut_svg(pct: int, size: int = 180) -> str:
+    pct = max(0, min(100, pct))
+    radius = (size - 32) / 2
+    cx = cy = size / 2
+    circumference = 2 * np.pi * radius
+    dash = circumference * pct / 100
+    gap = circumference - dash
+    stroke_color = "#ef4444" if pct < 50 else "#facc15" if pct <= 80 else "#22c55e"
+    return f'''
+<div style="display:flex;align-items:center;justify-content:center;padding:6px;">
+<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}">
+  <circle cx="{cx}" cy="{cy}" r="{radius}" stroke="#334155" stroke-width="14" fill="none"/>
+  <circle cx="{cx}" cy="{cy}" r="{radius}" stroke="{stroke_color}" stroke-width="14" fill="none" stroke-linecap="round"
+          stroke-dasharray="{dash} {gap}" transform="rotate(-90 {cx} {cy})"/>
+  <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" style="font-size:20px;font-weight:700;fill:#ffffff;">{pct}%</text>
+</svg>
+</div>
+'''
+
+def format_skill_chips(skills: str, skill_type: str) -> str:
+    if not skills or skills.lower() == "none":
+        return "<span class='small-note'>None</span>"
+    colors = {"tech": ["#3b82f6","#06b6d4","#0ea5e9","#2563eb"],
+              "soft": ["#a78bfa","#c084fc","#d8b4fe","#e9d5ff"]}
+    color_list = colors.get(skill_type, ["#94a3b8"])
+    return "".join(
+        f'<span style="display:inline-block;margin:4px;padding:6px 10px;border-radius:12px;background:{color_list[i%len(color_list)]};font-weight:600;font-size:13px;">{s.strip("- ").title()}</span>'
+        for i, s in enumerate(skills.splitlines())
+    )
 
 def render_keyword_heatmap(jd_keywords: List[str], jd_text: str) -> str:
     if not jd_keywords:
@@ -486,148 +490,59 @@ def render_keyword_heatmap(jd_keywords: List[str], jd_text: str) -> str:
         heatmap_html += f'<span style="font-size:{weight}px; opacity:{opacity}; margin:4px; display:inline-block;">{kw}</span>'
     return heatmap_html
 
-def generate_suggestions(missing_skills: Set[str], jd_top_keywords: List[str], resume: str, pct: int) -> str:
-    """
-    Generate 5 dynamic improvement suggestions based on missing skills and match percentage.
-    """
-    bullets = []
-
-    # Low match (<50%) → focus on missing key skills and entry-level guidance
-    if pct < 50:
-        bullets.append("**Add key missing skills:** Include these essential skills from the job description:\n" +
-                       "\n".join(f"- {s.title()}" for s in sorted(list(missing_skills)[:5])))
-        bullets.append("**Highlight transferable skills:** Show relevant projects, coursework, or volunteer work.")
-        bullets.append("**Entry-level guidance:** Consider certifications or online courses for core missing skills.")
-        bullets.append("**Use simple, clear phrasing:** Short sentences, bullet points, and consistent tense help readability.")
-        bullets.append("**Next steps:** Tailor your resume for this role and aim to increase the match percentage before applying.")
-
-    # Medium match (50–80%) → optimize phrasing, highlight experience, minor gaps
-    elif 50 <= pct <= 80:
-        bullets.append("**Close minor gaps:** Add these missing skills if relevant:\n" +
-                       "\n".join(f"- {s.title()}" for s in sorted(list(missing_skills)[:5])))
-        bullets.append("**Optimize phrasing:** Use action verbs and quantify achievements where possible.")
-        bullets.append("**Highlight experience:** Move relevant experience to the top and ensure keywords are present.")
-        bullets.append("**Refine formatting:** Ensure consistent fonts, bullet points, and clear sections.")
-        bullets.append("**Next steps:** Re-run the analysis after updates to reach a high match score (>80%).")
-
-    # High match (>80%) → fine-tuning, emphasizing achievements, advanced tips
-    else:
-        bullets.append("**Fine-tune your resume:** Ensure formatting is clean and bullet points are concise.")
-        bullets.append("**Emphasize accomplishments:** Highlight measurable impact and leadership experiences.")
-        bullets.append("**Include optional skills:** Add these missing skills to further strengthen your profile:\n" +
-                       "\n".join(f"- {s.title()}" for s in sorted(list(missing_skills)[:5])))
-        bullets.append("**Refine keywords:** Ensure top job description keywords are integrated naturally.")
-        bullets.append("**Advanced tips:** Tailor each section for maximum relevance to this role and ATS-friendly wording.")
-
-    # Always include JD keyword suggestion if space allows
-    if jd_top_keywords and len(bullets) < 5:
-        bullets.append(f"**Match keywords from the job description:** Include relevant terms like {', '.join(jd_top_keywords[:5])}.")
-
-    return "\n\n".join(bullets)
-
-
 # ---------------------------
-# Main analysis
+# Analysis
 # ---------------------------
-
-def analyze(job_description: str, resume_text: str) -> Tuple[str, str, str, str, str, int]:
+def analyze(job_description: str, resume_text: str) -> Tuple[str,str,str,str,str,int]:
     jd, resume = clean_text(job_description), clean_text(resume_text)
-    sim = cosine_score(get_embedding(jd), get_embedding(resume))
-    pct = int(round(sim * 100))
-
-    # Donut SVG
+    pct = int(round(cosine_score(get_embedding(jd), get_embedding(resume)) * 100))
     donut_svg = render_donut_svg(pct)
 
-    # Detect missing technical skills
     jd_tech = extract_skills(jd, TECHNICAL_SKILLS)
     resume_tech = extract_skills(resume, TECHNICAL_SKILLS)
-    missing_tech = jd_tech - resume_tech
-
-    # Detect missing soft skills
     jd_soft = extract_skills(jd, SOFT_SKILLS)
     resume_soft = extract_skills(resume, SOFT_SKILLS)
-    missing_soft = jd_soft - resume_soft
 
-    missing_tech_text = "\n".join(f"- {s}" for s in sorted(missing_tech)) if missing_tech else "None"
-    missing_soft_text = "\n".join(f"- {s}" for s in sorted(missing_soft)) if missing_soft else "None"
+    missing_tech_text = "\n".join(f"- {s}" for s in sorted(jd_tech - resume_tech)) or "None"
+    missing_soft_text = "\n".join(f"- {s}" for s in sorted(jd_soft - resume_soft)) or "None"
 
     jd_keywords = top_keywords_from_text(jd, top_n=8)
-    suggestions_md = generate_suggestions(missing_tech | missing_soft, jd_keywords, resume, pct)
 
-    explanation = (
-        f"**Match Score:** {format_score_pct(sim)}\n\n"
-        "This score is the cosine similarity between the job description and resume embeddings. "
-        "It's a heuristic indicator — useful for tailoring but not a perfect predictor.\n\n"
-    )
-    score_md = explanation + f"**Top keywords from job description:** {', '.join(jd_keywords)}\n\n"
+    from functools import partial
+    def generate_suggestions_wrapper(pct, jd_tech, resume_tech, jd_soft, resume_soft):
+        from itertools import chain
+        missing_skills = set(chain(jd_tech - resume_tech, jd_soft - resume_soft))
+        bullets = []
+    
+        if pct < 50:
+            # 5 suggestions for low match
+            bullets.append("**Add key missing skills:** " + ", ".join(sorted(list(missing_skills)[:5])))
+            bullets.append("**Highlight transferable skills:** Show relevant projects, coursework, or volunteer work.")
+            bullets.append("**Tailor resume for this JD:** Focus on required skills mentioned in the job description.")
+            bullets.append("**Quantify your achievements:** Include metrics, percentages, or numbers where possible.")
+            bullets.append("**Improve formatting & clarity:** Use clear section headings and bullet points for readability.")
+    
+        elif 50 <= pct <= 80:
+            # 3 suggestions for medium match
+            bullets.append("**Close minor gaps:** " + ", ".join(sorted(list(missing_skills)[:5])))
+            bullets.append("**Optimize phrasing:** Use action verbs and quantify achievements.")
+            bullets.append("**Emphasize relevant experience:** Make sure projects or roles matching the JD stand out.")
+    
+        else:
+            # 2 suggestions for high match
+            bullets.append("**Fine-tune your resume:** Highlight accomplishments and optional skills: " +
+                           ", ".join(sorted(list(missing_skills)[:5])))
+            bullets.append("**Showcase leadership & impact:** Emphasize contributions and results in each role.")
+    
+        return "\n\n".join(bullets)
+
+
+    suggestions_md = generate_suggestions_wrapper()
+
+    explanation = f"**Match Score:** {pct}%\n\nThis is cosine similarity of embeddings."
+    score_md = explanation + f"\n\n**Top JD keywords:** {', '.join(jd_keywords)}"
 
     return donut_svg, score_md, missing_tech_text, missing_soft_text, suggestions_md, pct
-
-
-# ---------------------------
-# Donut SVG
-# ---------------------------
-
-def render_donut_svg(pct: int, size: int = 180) -> str:
-    uid = str(int(time.time() * 1000))[-6:]
-    pct = max(0, min(100, int(pct)))
-
-    radius = (size - 32) / 2
-    cx = cy = size / 2
-    circumference = 2 * np.pi * radius
-    dash = circumference * pct / 100
-    gap = circumference - dash
-
-    # Determine color based on pct
-    if pct < 50:
-        stroke_color = "#ef4444"  # red
-    elif pct <= 80:
-        stroke_color = "#facc15"  # yellow
-    else:
-        stroke_color = "#22c55e"  # green
-
-    return f'''
-<div style="display:flex;align-items:center;justify-content:center;padding:6px;">
-<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}" xmlns="http://www.w3.org/2000/svg">
-  <!-- Background circle -->
-  <circle cx="{cx}" cy="{cy}" r="{radius}" stroke="#334155" stroke-width="14" fill="none"/>
-  <!-- Progress arc -->
-  <circle 
-    cx="{cx}" cy="{cy}" r="{radius}" 
-    stroke="{stroke_color}" 
-    stroke-width="14" 
-    fill="none" 
-    stroke-linecap="round"
-    stroke-dasharray="{dash} {gap}" 
-    stroke-dashoffset="0"
-    transform="rotate(-90 {cx} {cy})"
-    style="transition: stroke-dasharray 1s ease-out;" />
-  <!-- Center text -->
-  <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle"
-        style="font-size:20px;font-weight:700;fill:#ffffff;font-family:'Poppins';">
-    {pct}%
-  </text>
-</svg>
-</div>
-'''
-
-# ---------------------------
-# Format missing skills as animated chips
-# ---------------------------
-def format_skill_chips(skills: str, skill_type: str) -> str:
-    if not skills or skills.lower() == "none":
-        return "<span class='small-note'>None</span>"
-    colors = {
-        "tech": ["#3b82f6", "#06b6d4", "#0ea5e9", "#2563eb"],
-        "soft": ["#a78bfa", "#c084fc", "#d8b4fe", "#e9d5ff"]
-    }
-    color_list = colors.get(skill_type, ["#94a3b8"])
-    skill_items = [s.strip("- ").title() for s in skills.splitlines()]
-    chips_html = ""
-    for i, skill in enumerate(skill_items):
-        color = color_list[i % len(color_list)]
-        chips_html += f'<span style="display:inline-block;margin:4px;padding:6px 10px;border-radius:12px;background:{color};font-weight:600;font-size:13px;animation:chip-fade 1s ease;">{skill}</span>'
-    return chips_html
 
 # ---------------------------
 # Gradio UI
@@ -735,22 +650,27 @@ def build_ui():
             missing_tech_chips = format_skill_chips(missing_tech_text, "tech")
             missing_soft_chips = format_skill_chips(missing_soft_text, "soft")
         
-            # Combine all skills for matched computation
-            all_skills = TECHNICAL_SKILLS + SOFT_SKILLS
-            
-            # Extract skills from JD and resume
-            jd_skills = extract_skills(jd, all_skills)
-            resume_skills = extract_skills(resume, all_skills)
-            
-            # Compute matched skills (intersection)
-            matched_chips_html = format_matched_skills(jd_skills, resume_skills)
-            
+            # Extract skills separately
+            jd_tech = extract_skills(jd, TECHNICAL_SKILLS)
+            resume_tech = extract_skills(resume, TECHNICAL_SKILLS)
+            jd_soft = extract_skills(jd, SOFT_SKILLS)
+            resume_soft = extract_skills(resume, SOFT_SKILLS)
+        
+            # Compute matched skills (only intersection)
+            matched_tech_chips = format_matched_skills(jd_tech, resume_tech)
+            matched_soft_chips = format_matched_skills(jd_soft, resume_soft)
+        
+            # Combine matched tech + soft skills
+            matched_chips_html = f"""
+            <b>Matched Technical Skills:</b><br>{matched_tech_chips}<br>
+            <b>Matched Soft Skills:</b><br>{matched_soft_chips}
+            """
+        
             # Heatmap
             heatmap_html = render_keyword_heatmap(top_keywords_from_text(jd, 8), jd)
             score_md_with_heatmap = score_md + "<br><b>JD Keyword Density Word Cloud:</b><br>" + heatmap_html
         
             return donut_svg, score_md_with_heatmap, missing_tech_chips, missing_soft_chips, matched_chips_html, suggestions
-
 
         run_btn.click(
             _on_click, 
@@ -758,6 +678,7 @@ def build_ui():
             outputs=[out_chart, out_score, out_missing_tech, out_missing_soft, out_matched_skills, out_suggestions]
         )
     return demo
+
 
 if __name__ == "__main__":
     demo = build_ui()
