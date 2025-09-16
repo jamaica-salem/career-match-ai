@@ -530,13 +530,11 @@ def analyze(job_description: str, resume_text: str) -> Tuple[str, str, str, str,
 
     jd_keywords = top_keywords_from_text(jd, top_n=8)
     suggestions_md = generate_suggestions_dynamic(
-        resume=resume,
-        job_description=jd,
-        matched_skills=resume_tech | resume_soft,
-        missing_skills=missing_tech | missing_soft,
-        jd_keywords=jd_keywords,
-        pct=pct
-    )
+                matched_skills=resume_tech | resume_soft,
+                missing_skills=(jd_tech | jd_soft) - (resume_tech | resume_soft),
+                jd_keywords=jd_keywords,
+                pct=pct
+            )
 
 
     explanation = (
